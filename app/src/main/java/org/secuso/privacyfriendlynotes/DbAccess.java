@@ -5,10 +5,14 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.provider.ContactsContract;
 
 import org.secuso.privacyfriendlynotes.DbContract.CategoryEntry;
 import org.secuso.privacyfriendlynotes.DbContract.NoteEntry;
 import org.secuso.privacyfriendlynotes.DbContract.NotificationEntry;
+
+import java.util.Date;
+import java.util.UUID;
 
 /**
  * Class that holds methods to access the database easily.
@@ -24,7 +28,7 @@ public class DbAccess {
      */
     public static Cursor getNote(Context c, int id) {
         String[] projection = { NoteEntry.COLUMN_ID, NoteEntry.COLUMN_TYPE, NoteEntry.COLUMN_NAME, NoteEntry.COLUMN_CONTENT, NoteEntry.COLUMN_CATEGORY };
-        String selection = NoteEntry.COLUMN_ID + " = ?";
+        String selection = NoteEntry.COLUMN_ID + " = ? AND " + NoteEntry.COLUMN_DELETED + " = 0";
         String[] selectionArgs = {"" + id};
 
         return c.getContentResolver().query(DbContract.NOTES_URI,
@@ -42,6 +46,8 @@ public class DbAccess {
      */
     public static int addNote(Context c, String name, String content, int type, int category){
         ContentValues values = new ContentValues();
+        values.put(NoteEntry.COLUMN_UUID, UUID.randomUUID().toString());
+        values.put(NoteEntry.COLUMN_TIMESTAMP, new Date().getTime());
         values.put(NoteEntry.COLUMN_TYPE, type);
         values.put(NoteEntry.COLUMN_NAME, name);
         values.put(NoteEntry.COLUMN_CONTENT, content);
@@ -59,6 +65,7 @@ public class DbAccess {
      */
     public static void updateNote(Context c, int id, String name, String content, int category) {
         ContentValues values = new ContentValues();
+        values.put(NoteEntry.COLUMN_TIMESTAMP, new Date().getTime());
         values.put(NoteEntry.COLUMN_NAME, name);
         values.put(NoteEntry.COLUMN_CONTENT, content);
         values.put(NoteEntry.COLUMN_CATEGORY, category);
@@ -76,6 +83,7 @@ public class DbAccess {
      */
     public static void trashNote(Context c, int id) {
         ContentValues values = new ContentValues();
+        values.put(NoteEntry.COLUMN_TIMESTAMP, new Date().getTime());
         values.put(NoteEntry.COLUMN_TRASH, 1);
         String selection = NoteEntry.COLUMN_ID + " = ?";
         String[] selectionArgs = { String.valueOf(id) };
@@ -91,6 +99,7 @@ public class DbAccess {
      */
     public static void restoreNote(Context c, int id) {
         ContentValues values = new ContentValues();
+        values.put(NoteEntry.COLUMN_TIMESTAMP, new Date().getTime());
         values.put(NoteEntry.COLUMN_TRASH, 0);
         String selection = NoteEntry.COLUMN_ID + " = ?";
         String[] selectionArgs = { String.valueOf(id) };
@@ -106,9 +115,15 @@ public class DbAccess {
     public static void deleteNote(Context c, int id) {
         //TODO delete the file for sketch and audio
 
+        ContentValues values = new ContentValues();
+        values.put(NoteEntry.COLUMN_TIMESTAMP, new Date().getTime());
+        values.put(NoteEntry.COLUMN_NAME, "");
+        values.put(NoteEntry.COLUMN_CONTENT, "");
+        values.put(NoteEntry.COLUMN_DELETED, 1);
         String selection = NoteEntry.COLUMN_ID + " = ?";
         String[] selectionArgs = { String.valueOf(id) };
-        c.getContentResolver().delete(DbContract.NOTES_URI, selection, selectionArgs);
+
+        c.getContentResolver().update(DbContract.NOTES_URI, values, selection, selectionArgs);
     }
 
     /**
@@ -136,13 +151,7 @@ public class DbAccess {
      * @return A {@link android.database.Cursor} over all the notes
      */
     public static Cursor getCursorAllNotes(Context c) {
-        String[] projection = {NoteEntry.COLUMN_ID, NoteEntry.COLUMN_TYPE, NoteEntry.COLUMN_NAME, NoteEntry.COLUMN_CONTENT};
-
-        return c.getContentResolver().query(DbContract.NOTES_URI,
-                projection,
-                null,                           // Columns for WHERE
-                null,                           // Values for WHERE
-                null);                     // Sort Order
+        return getCursorAllNotes(c, null, null);
     }
 
     /**
@@ -155,9 +164,16 @@ public class DbAccess {
     public static Cursor getCursorAllNotes(Context c, String selection, String[] selectionArgs) {
         String[] projection = {NoteEntry.COLUMN_ID, NoteEntry.COLUMN_TYPE, NoteEntry.COLUMN_NAME, NoteEntry.COLUMN_CONTENT};
 
+        StringBuilder sel = new StringBuilder();
+        if (selection != null && selection.length() > 0) {
+            sel.append(selection);
+            sel.append(" AND ");
+        }
+        sel.append(NoteEntry.COLUMN_DELETED + " = 0");
+
         return c.getContentResolver().query(DbContract.NOTES_URI,
                 projection,                     // SELECT
-                selection,                           // Columns for WHERE
+                sel.toString(),                           // Columns for WHERE
                 selectionArgs,                           // Values for WHERE
                 null);                     // Sort Order
     }
@@ -168,15 +184,7 @@ public class DbAccess {
      * @return A {@link android.database.Cursor} over all the notes
      */
     public static Cursor getCursorAllNotesAlphabetical(Context c) {
-        String[] projection = {NoteEntry.COLUMN_ID, NoteEntry.COLUMN_TYPE, NoteEntry.COLUMN_NAME, NoteEntry.COLUMN_CONTENT};
-
-        String sortOrder = NoteEntry.COLUMN_NAME + " COLLATE NOCASE ASC";
-
-        return c.getContentResolver().query(DbContract.NOTES_URI,
-                projection,                     // SELECT
-                null,                           // Columns for WHERE
-                null,                           // Values for WHERE
-                sortOrder);                     // Sort Order
+        return getCursorAllNotesAlphabetical(c, null, null);
     }
 
     /**
@@ -189,11 +197,18 @@ public class DbAccess {
     public static Cursor getCursorAllNotesAlphabetical(Context c, String selection, String[] selectionArgs) {
         String[] projection = {NoteEntry.COLUMN_ID, NoteEntry.COLUMN_TYPE, NoteEntry.COLUMN_NAME, NoteEntry.COLUMN_CONTENT};
 
+        StringBuilder sel = new StringBuilder();
+        if (selection != null && selection.length() > 0) {
+            sel.append(selection);
+            sel.append(" AND ");
+        }
+        sel.append(NoteEntry.COLUMN_DELETED + " = 0");
+
         String sortOrder = NoteEntry.COLUMN_NAME + " COLLATE NOCASE ASC";
 
         return c.getContentResolver().query(DbContract.NOTES_URI,
                 projection,                     // SELECT
-                selection,                           // Columns for WHERE
+                sel.toString(),                           // Columns for WHERE
                 selectionArgs,                           // Values for WHERE
                 sortOrder);                     // Sort Order
     }
