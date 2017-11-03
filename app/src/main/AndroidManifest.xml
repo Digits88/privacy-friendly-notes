@@ -85,6 +85,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/fileprovider_paths" />
         </provider>
+        <provider
+            android:name="org.secuso.privacyfriendlynotes.DbContentProvider"
+            android:authorities="org.secuso.privacyfriendlynotes.provider"
+            android:exported="false">
+        </provider>
     </application>
 
 </manifest>

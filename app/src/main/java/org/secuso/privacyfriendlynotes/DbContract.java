@@ -1,5 +1,6 @@
 package org.secuso.privacyfriendlynotes;
 
+import android.net.Uri;
 import android.provider.BaseColumns;
 
 /**
@@ -8,6 +9,10 @@ import android.provider.BaseColumns;
  */
 public class DbContract {
     public DbContract(){}
+
+    public static Uri NOTES_URI = Uri.parse("content://" + DbContentProvider.AUTHORITY + "/notes");
+    public static Uri CATEGORIES_URI = Uri.parse("content://" + DbContentProvider.AUTHORITY + "/categories");
+    public static Uri NOTIFICATIONS_URI = Uri.parse("content://" + DbContentProvider.AUTHORITY + "/notifications");
 
     public static abstract class NoteEntry implements BaseColumns {
         public static final String TABLE_NAME = "notes";
