@@ -7,6 +7,7 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.IntentSender;
 import android.content.SyncResult;
 import android.database.Cursor;
 import android.os.Bundle;
@@ -24,6 +25,8 @@ import android.support.annotation.NonNull;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
@@ -40,21 +43,13 @@ import com.google.android.gms.drive.query.Filters;
 import com.google.android.gms.drive.query.Query;
 import com.google.android.gms.drive.query.SearchableField;
 
-import org.secuso.privacyfriendlynotes.MainActivity;
-
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.Serializable;
-import java.io.Writer;
 import java.security.spec.KeySpec;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Cipher;
@@ -67,57 +62,39 @@ import javax.crypto.spec.PBEKeySpec;
 public class SyncAdapter extends AbstractThreadedSyncAdapter {
 
     private ContentResolver contentResolver;
-    protected GoogleApiClient mGoogleApiClient = null;
+    private GoogleApiClient mGoogleApiClient = null;
 
 
-    public void createAppBaseFolder() {
+    private void createAppBaseFolder() {
         DriveFolder folder = Drive.DriveApi.getRootFolder(mGoogleApiClient);
         Query query = new Query.Builder()
                 .addFilter(Filters.eq(SearchableField.TITLE, "SecretsDB"))
                 .build();
-        folder.queryChildren(mGoogleApiClient, query).setResultCallback(childrenRetrievedCallback);
+        MetadataBuffer md = folder.queryChildren(mGoogleApiClient, query).await().getMetadataBuffer();
+
+        if (md.getCount() == 0) {
+            Log.e(TAG,"No app dir yet - create it");
+            MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
+                    .setTitle("SecretsDB").build();
+            DriveFolder.DriveFolderResult result = Drive.DriveApi.getRootFolder(mGoogleApiClient).createFolder(mGoogleApiClient, changeSet).await();
+            if (!result.getStatus().isSuccess()) {
+                Log.e(TAG,"Error while trying to create the folder");
+                return;
+            }
+            Log.e(TAG, "Created a folder: " + result.getDriveFolder().getDriveId());
+            appFolder = result.getDriveFolder();
+        } else {
+            for (Metadata m : md) {
+                if (m.isFolder()) {
+                    appFolder = m.getDriveId().asDriveFolder();
+                }
+            }
+
+            Log.e(TAG, "Successfully listed files.");
+        }
     };
 
     final static String TAG = "Sync";
-
-    ResultCallback<DriveApi.MetadataBufferResult> childrenRetrievedCallback = new
-            ResultCallback<DriveApi.MetadataBufferResult>() {
-                @Override
-                public void onResult(DriveApi.MetadataBufferResult result) {
-                    if (!result.getStatus().isSuccess()) {
-                        Log.e(TAG, "Problem while retrieving files");
-                        return;
-                    }
-                    MetadataBuffer md = result.getMetadataBuffer();
-                    if (md.getCount() == 0) {
-                        Log.e(TAG,"No app dir yet - create it");
-                        MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
-                                .setTitle("SecretsDB").build();
-                        Drive.DriveApi.getRootFolder(mGoogleApiClient).createFolder(
-                                mGoogleApiClient, changeSet).setResultCallback(
-                                new ResultCallback<DriveFolder.DriveFolderResult>() {
-                                    @Override
-                                    public void onResult(DriveFolder.DriveFolderResult result) {
-                                        if (!result.getStatus().isSuccess()) {
-                                            Log.e(TAG,"Error while trying to create the folder");
-                                            return;
-                                        }
-                                        Log.e(TAG, "Created a folder: " + result.getDriveFolder().getDriveId());
-                                        appFolder = result.getDriveFolder();
-                                    }
-                                }
-                        );
-                    } else {
-                        for (Metadata m : md) {
-                            if (m.isFolder()) {
-                                appFolder = m.getDriveId().asDriveFolder();
-                            }
-                        }
-
-                        Log.e(TAG,"Successfully listed files.");
-                    }
-                };
-            };
 
     public DriveFolder appFolder = null;
 
@@ -354,28 +331,7 @@ protected void onPause() {
         }
         super.onPause();
         }
-
-@Override
-public void onConnectionFailed(ConnectionResult result) {
-        // Called whenever the API client fails to connect.
-        if (!result.hasResolution()) {
-        // show the localized error dialog.
-        GoogleApiAvailability.getInstance().getErrorDialog(this, result.getErrorCode(), 0).show();
-        return;
-        }
-        // The failure has a resolution. Resolve it.
-        // Called typically when the app is not yet authorized, and an
-        // authorization
-        // dialog is displayed to the user.
-        try {
-        result.startResolutionForResult(this, REQUEST_CODE_RESOLUTION);
-        } catch (IntentSender.SendIntentException e) {
-        }
-        }
-
 */
-
-
 
     public SyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
@@ -389,18 +345,7 @@ public void onConnectionFailed(ConnectionResult result) {
             mGoogleApiClient = new GoogleApiClient.Builder(context)
                     .addApi(Drive.API)
                     .addScope(Drive.SCOPE_FILE)
-                    .addConnectionCallbacks(null)
-                    .addOnConnectionFailedListener(null)
                     .build();
-        }
-        // Connect the client. Once connected, the camera is launched.
-        mGoogleApiClient.connect();
-
-        createAppBaseFolder();
-        try {
-            wait(2000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
     }
 
@@ -508,6 +453,11 @@ public void onConnectionFailed(ConnectionResult result) {
     @Override
     public void onPerformSync(Account account, Bundle extras, String authority, ContentProviderClient provider, SyncResult syncResult) {
         System.out.println("syncing ...");
+
+        // Connect the client. Once connected, the camera is launched.
+        ConnectionResult result = mGoogleApiClient.blockingConnect();
+        System.out.printf("blockingConnect() = %d%n", result.getErrorCode());
+        createAppBaseFolder();
 
         SparseArray<String> categories = getCategories();
         Map<String, Integer> categoryIds = new HashMap<>();

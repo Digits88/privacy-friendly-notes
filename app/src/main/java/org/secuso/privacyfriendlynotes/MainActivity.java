@@ -95,7 +95,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
 public class MainActivity extends AppCompatActivity
-        implements NavigationView.OnNavigationItemSelectedListener, View.OnClickListener {
+        implements NavigationView.OnNavigationItemSelectedListener, View.OnClickListener, GoogleApiClient.OnConnectionFailedListener {
 
     private static final int CAT_ALL = -1;
     private static final String TAG_WELCOME_DIALOG = "welcome_dialog";
@@ -294,11 +294,30 @@ public class MainActivity extends AppCompatActivity
     }
 
     @Override
+    public void onConnectionFailed(ConnectionResult result) {
+        if (result.hasResolution()) {
+            try {
+                // !!!
+                result.startResolutionForResult(this, 3);
+            } catch (IntentSender.SendIntentException e) {
+                //mPlusClient.connect();
+            }
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
 
         updateList();
         buildDrawerMenu();
+
+        GoogleApiClient client = new GoogleApiClient.Builder(this)
+                .addApi(Drive.API)
+                .addScope(Drive.SCOPE_FILE)
+                .addOnConnectionFailedListener(this)
+                .build();
+        client.connect();
     }
 
     @Override
