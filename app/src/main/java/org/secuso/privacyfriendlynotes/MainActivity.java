@@ -5,14 +5,19 @@ import android.accounts.AccountManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.annotation.RequiresApi;
 import android.support.design.widget.NavigationView;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.CursorAdapter;
@@ -20,7 +25,9 @@ import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.util.SparseBooleanArray;
+import android.util.Xml;
 import android.view.ActionMode;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -33,18 +40,68 @@ import android.widget.AdapterView;
 import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.getbase.floatingactionbutton.FloatingActionsMenu;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
+import com.google.android.gms.drive.Drive;
+import com.google.android.gms.drive.DriveApi;
+import com.google.android.gms.drive.DriveContents;
+import com.google.android.gms.drive.DriveFile;
+import com.google.android.gms.drive.DriveFolder;
+import com.google.android.gms.drive.DriveId;
+import com.google.android.gms.drive.Metadata;
+import com.google.android.gms.drive.MetadataBuffer;
+import com.google.android.gms.drive.MetadataChangeSet;
+import com.google.android.gms.drive.query.Filters;
+import com.google.android.gms.drive.query.Query;
+import com.google.android.gms.drive.query.SearchableField;
 
 import org.secuso.privacyfriendlynotes.fragments.WelcomeDialog;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.ObjectInput;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutput;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Serializable;
+import java.io.Writer;
+import java.security.Timestamp;
+import java.security.spec.KeySpec;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener, View.OnClickListener {
 
     private static final int CAT_ALL = -1;
     private static final String TAG_WELCOME_DIALOG = "welcome_dialog";
+    private static final int REQUEST_CODE_RESOLUTION = 3;
     FloatingActionsMenu fabMenu;
-
+    private GoogleApiClient mGoogleApiClient;
     private int selectedCategory = CAT_ALL; //ID of the currently selected category. Defaults to "all"
 
     private Account syncAccount;
@@ -89,7 +146,7 @@ public class MainActivity extends AppCompatActivity
                 TextView text = (TextView) rowView.findViewById(R.id.item_name);
                 String name = cursor.getString(cursor.getColumnIndexOrThrow(DbContract.NoteEntry.COLUMN_NAME));
                 if (name.length() >= 30) {
-                    text.setText(name.substring(0,27) + "...");
+                    text.setText(name.substring(0, 27) + "...");
                 } else {
                     text.setText(name);
                 }
@@ -118,7 +175,7 @@ public class MainActivity extends AppCompatActivity
                 TextView text = (TextView) view.findViewById(R.id.item_name);
                 String name = cursor.getString(cursor.getColumnIndexOrThrow(DbContract.NoteEntry.COLUMN_NAME));
                 if (name.length() >= 30) {
-                    text.setText(name.substring(0,27) + "...");
+                    text.setText(name.substring(0, 27) + "...");
                 } else {
                     text.setText(name);
                 }
@@ -186,7 +243,7 @@ public class MainActivity extends AppCompatActivity
                 MenuInflater inflater = mode.getMenuInflater();
                 inflater.inflate(R.menu.main_cab, menu);
                 //Temporary fix, otherwise statusbar would be black
-                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP){
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     getWindow().setStatusBarColor(getResources().getColor(R.color.colorPrimaryDark));
                     // or Color.TRANSPARENT or your preferred color
                 }
@@ -214,7 +271,7 @@ public class MainActivity extends AppCompatActivity
             @Override
             public void onDestroyActionMode(ActionMode mode) {
                 //Temporary fix, otherwise statusbar would be black
-                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP){
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     getWindow().setStatusBarColor(Color.TRANSPARENT);
                     // or Color.TRANSPARENT or your preferred color
                 }
@@ -239,6 +296,7 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+
         updateList();
         buildDrawerMenu();
     }
@@ -309,6 +367,34 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onClick(View v) {
+        /*
+        String data = "blabla3";
+
+        RemoteStorageObject r = new RemoteStorageObject("mynewbla", "bla", 1, 2, "bla", false, false);
+        storeObject(UUID.nameUUIDFromBytes("new3".getBytes()), r);
+        getRemoteObject(UUID.nameUUIDFromBytes("new3".getBytes()), new getRemoteObjectResult() {
+            @Override
+            public void onResult(RemoteStorageObject o) {
+                Log.e("mylog", o.title);
+            }
+        });
+        writeFile("new3", data.getBytes());
+        readFile("new3", new ReadFileResult() {
+            @Override
+            public void onResult(byte[] data) {
+                Log.e("mylog", new String(data));
+            };
+        });
+        listFiles(new ListFilesResult() {
+            @Override
+            public void onResult(Map<String, String> result) {
+                for(String key : result.keySet()) {
+                    Log.e("mylog", "listfilesinonclick");
+                    Log.e("mylog", key);
+                }
+            }});
+        return;
+        */
         switch (v.getId()) {
             case R.id.fab_text:
                 startActivity(new Intent(getApplication(), TextNoteActivity.class));
@@ -339,7 +425,7 @@ public class MainActivity extends AppCompatActivity
         menuInflater.inflate(R.menu.activity_main_drawer, navMenu);
         //Get the rest from the database
         Cursor c = DbAccess.getCategories(getBaseContext());
-        while (c.moveToNext()){
+        while (c.moveToNext()) {
             String name = c.getString(c.getColumnIndexOrThrow(DbContract.CategoryEntry.COLUMN_NAME));
             int id = c.getInt(c.getColumnIndexOrThrow(DbContract.CategoryEntry.COLUMN_ID));
             navMenu.add(R.id.drawer_group2, id, Menu.NONE, name).setIcon(R.drawable.ic_label_black_24dp);
@@ -352,11 +438,11 @@ public class MainActivity extends AppCompatActivity
         CursorAdapter adapter = (CursorAdapter) notesList.getAdapter();
         if (selectedCategory == -1) { //show all
             String selection = DbContract.NoteEntry.COLUMN_TRASH + " = ?";
-            String[] selectionArgs = { "0" };
+            String[] selectionArgs = {"0"};
             adapter.changeCursor(DbAccess.getCursorAllNotes(getBaseContext(), selection, selectionArgs));
         } else {
             String selection = DbContract.NoteEntry.COLUMN_CATEGORY + " = ? AND " + DbContract.NoteEntry.COLUMN_TRASH + " = ?";
-            String[] selectionArgs = { String.valueOf(selectedCategory), "0" };
+            String[] selectionArgs = {String.valueOf(selectedCategory), "0"};
             adapter.changeCursor(DbAccess.getCursorAllNotes(getBaseContext(), selection, selectionArgs));
         }
     }
@@ -366,21 +452,21 @@ public class MainActivity extends AppCompatActivity
         CursorAdapter adapter = (CursorAdapter) notesList.getAdapter();
         if (selectedCategory == -1) { //show all
             String selection = DbContract.NoteEntry.COLUMN_TRASH + " = ?";
-            String[] selectionArgs = { "0" };
+            String[] selectionArgs = {"0"};
             adapter.changeCursor(DbAccess.getCursorAllNotesAlphabetical(getBaseContext(), selection, selectionArgs));
         } else {
             String selection = DbContract.NoteEntry.COLUMN_CATEGORY + " = ? AND " + DbContract.NoteEntry.COLUMN_TRASH + " = ?";
-            String[] selectionArgs = { String.valueOf(selectedCategory), "0" };
+            String[] selectionArgs = {String.valueOf(selectedCategory), "0"};
             adapter.changeCursor(DbAccess.getCursorAllNotesAlphabetical(getBaseContext(), selection, selectionArgs));
         }
     }
 
-    private void deleteSelectedItems(){
+    private void deleteSelectedItems() {
         ListView notesList = (ListView) findViewById(R.id.notes_list);
         CursorAdapter adapter = (CursorAdapter) notesList.getAdapter();
         SparseBooleanArray checkedItemPositions = notesList.getCheckedItemPositions();
-        for (int i=0; i < checkedItemPositions.size(); i++) {
-            if(checkedItemPositions.valueAt(i)) {
+        for (int i = 0; i < checkedItemPositions.size(); i++) {
+            if (checkedItemPositions.valueAt(i)) {
                 DbAccess.trashNote(getBaseContext(), (int) (long) adapter.getItemId(checkedItemPositions.keyAt(i)));
             }
         }
