@@ -386,34 +386,6 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onClick(View v) {
-        /*
-        String data = "blabla3";
-
-        RemoteStorageObject r = new RemoteStorageObject("mynewbla", "bla", 1, 2, "bla", false, false);
-        storeObject(UUID.nameUUIDFromBytes("new3".getBytes()), r);
-        getRemoteObject(UUID.nameUUIDFromBytes("new3".getBytes()), new getRemoteObjectResult() {
-            @Override
-            public void onResult(RemoteStorageObject o) {
-                Log.e("mylog", o.title);
-            }
-        });
-        writeFile("new3", data.getBytes());
-        readFile("new3", new ReadFileResult() {
-            @Override
-            public void onResult(byte[] data) {
-                Log.e("mylog", new String(data));
-            };
-        });
-        listFiles(new ListFilesResult() {
-            @Override
-            public void onResult(Map<String, String> result) {
-                for(String key : result.keySet()) {
-                    Log.e("mylog", "listfilesinonclick");
-                    Log.e("mylog", key);
-                }
-            }});
-        return;
-        */
         switch (v.getId()) {
             case R.id.fab_text:
                 startActivity(new Intent(getApplication(), TextNoteActivity.class));
