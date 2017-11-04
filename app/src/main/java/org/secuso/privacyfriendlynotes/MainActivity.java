@@ -355,6 +355,10 @@ public class MainActivity extends AppCompatActivity
             startActivity(new Intent(getApplication(), SettingsActivity.class));
         } else if (id == R.id.action_about) {
             startActivity(new Intent(getApplication(), AboutActivity.class));
+        } else if (id == R.id.action_sync) {
+            Bundle settings = new Bundle();
+            settings.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true); // FIXME: Why necessary?
+            contentResolver.requestSync(syncAccount, DbContentProvider.AUTHORITY, settings);
         }
 
         return super.onOptionsItemSelected(item);
@@ -487,6 +491,10 @@ public class MainActivity extends AppCompatActivity
             Bundle settings = new Bundle();
             settings.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true); // FIXME: Why necessary?
             contentResolver.requestSync(syncAccount, DbContentProvider.AUTHORITY, settings);
+
+            // HACK: Restart activity to reload list
+            startActivity(new Intent(getApplication(), MainActivity.class));
+            finish();
         }
     }
 
