@@ -456,7 +456,6 @@ protected void onPause() {
 
         // Connect the client. Once connected, the camera is launched.
         ConnectionResult result = mGoogleApiClient.blockingConnect();
-        System.out.printf("blockingConnect() = %d%n", result.getErrorCode());
         createAppBaseFolder();
 
         SparseArray<String> categories = getCategories();
@@ -485,7 +484,7 @@ protected void onPause() {
 
             if (dbNote == null || dbNote.timestamp < cloudNote.timestamp) {
                 boolean update = dbNote != null;
-                writeNoteToDb(uuid, dbNote, categoryIds, update);
+                writeNoteToDb(uuid, cloudNote, categoryIds, update);
             }
         }
 

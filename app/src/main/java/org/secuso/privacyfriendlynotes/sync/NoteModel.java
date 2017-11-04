@@ -1,6 +1,8 @@
 package org.secuso.privacyfriendlynotes.sync;
 
-public class NoteModel {
+import java.io.Serializable;
+
+public class NoteModel implements Serializable {
     public long timestamp;
     public int type;
     public String name;
