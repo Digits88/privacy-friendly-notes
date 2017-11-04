@@ -96,6 +96,7 @@ public class DbContentProvider extends ContentProvider {
         String table = getTableName(uri);
         if (table == null || isSpecificItem(uri)) return null;
         long id = db.insert(table, null, values);
+        getContext().getContentResolver().notifyChange(uri, null);
         return ContentUris.withAppendedId(uri, id);
     }
 
@@ -111,7 +112,11 @@ public class DbContentProvider extends ContentProvider {
                 sel = sel + "AND _id = " + uri.getLastPathSegment();
             }
         }
-        return db.delete(table, sel, selectionArgs);
+        int result = db.delete(table, sel, selectionArgs);
+        if (result > 0) {
+            getContext().getContentResolver().notifyChange(uri, null);
+        }
+        return result;
     }
 
     @Override
@@ -126,6 +131,10 @@ public class DbContentProvider extends ContentProvider {
                 sel = sel + "AND _id = " + uri.getLastPathSegment();
             }
         }
-        return db.update(table, values, sel, selectionArgs);
+        int result = db.update(table, values, sel, selectionArgs);
+        if (result > 0) {
+            getContext().getContentResolver().notifyChange(uri, null);
+        }
+        return result;
     }
 }

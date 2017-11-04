@@ -1,10 +1,15 @@
 package org.secuso.privacyfriendlynotes;
 
+import android.accounts.Account;
+import android.accounts.AccountManager;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.ContentObserver;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
@@ -42,9 +47,15 @@ public class MainActivity extends AppCompatActivity
 
     private int selectedCategory = CAT_ALL; //ID of the currently selected category. Defaults to "all"
 
+    private Account syncAccount;
+    private ContentResolver contentResolver;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        syncAccount = createSyncAccount();
+
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -221,6 +232,8 @@ public class MainActivity extends AppCompatActivity
             editor.putBoolean(Preferences.SP_DATA_DISPLAY_WELCOME_DIALOG, false);
             editor.commit();
         }
+
+        registerContentObserver();
     }
 
     @Override
@@ -371,5 +384,37 @@ public class MainActivity extends AppCompatActivity
                 DbAccess.trashNote(getBaseContext(), (int) (long) adapter.getItemId(checkedItemPositions.keyAt(i)));
             }
         }
+    }
+
+    private Account createSyncAccount() {
+        AccountManager accountManager = (AccountManager)getSystemService(ACCOUNT_SERVICE);
+        Account account = new Account("dummy", "privacyfriendlynotes.secuso.org");
+        accountManager.addAccountExplicitly(account, null, null);
+        return account;
+    }
+
+    private class TableObserver extends ContentObserver {
+        public TableObserver() {
+            super(null);
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            onChange(selfChange, null);
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            System.out.println("requestSync()");
+
+            Bundle settings = new Bundle();
+            settings.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true); // FIXME: Why necessary?
+            contentResolver.requestSync(syncAccount, DbContentProvider.AUTHORITY, settings);
+        }
+    }
+
+    private void registerContentObserver() {
+        contentResolver = getContentResolver();
+        contentResolver.registerContentObserver(DbContract.NOTES_URI, true, new TableObserver());
     }
 }
