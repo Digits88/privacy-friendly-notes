@@ -57,13 +57,10 @@ import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
-
-
 public class SyncAdapter extends AbstractThreadedSyncAdapter {
 
     private ContentResolver contentResolver;
     private GoogleApiClient mGoogleApiClient = null;
-
 
     private void createAppBaseFolder() {
         DriveFolder folder = Drive.DriveApi.getRootFolder(mGoogleApiClient);
@@ -76,7 +73,8 @@ public class SyncAdapter extends AbstractThreadedSyncAdapter {
             Log.e(TAG,"No app dir yet - create it");
             MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
                     .setTitle("SecretsDB").build();
-            DriveFolder.DriveFolderResult result = Drive.DriveApi.getRootFolder(mGoogleApiClient).createFolder(mGoogleApiClient, changeSet).await();
+            DriveFolder.DriveFolderResult result = Drive.DriveApi.getRootFolder(mGoogleApiClient)
+                    .createFolder(mGoogleApiClient, changeSet).await();
             if (!result.getStatus().isSuccess()) {
                 Log.e(TAG,"Error while trying to create the folder");
                 return;
@@ -107,7 +105,7 @@ public class SyncAdapter extends AbstractThreadedSyncAdapter {
             Log.e(TAG, "********** file " + m.getTitle());
             Log.e(TAG, m.isEditable()?"edit yes":"edit no");
         }
-        //mb.release();
+        mb.release();
         return data;
     };
 
@@ -163,11 +161,13 @@ public class SyncAdapter extends AbstractThreadedSyncAdapter {
     }
 
     public NoteModel getRemoteObject(String uuid) {
+        NoteModel r = null;
+        try {
         byte[] data = readFile(uuid);
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         ObjectInput in = null;
-        NoteModel r = null;
-        try {
+
+
             in = new ObjectInputStream(bis);
             r = (NoteModel) in.readObject();
         } catch (Exception e) {
@@ -218,120 +218,58 @@ public class SyncAdapter extends AbstractThreadedSyncAdapter {
     };
 
     public void writeFile(final String name, final byte[] dataIn) {
-// encrypt data
         final byte[] data = encrypt(dataIn);
         Map<String, String> result = listFiles();
         if (result.containsKey(name)) {
             DriveFile f = DriveId.decodeFromString(result.get(name)).asDriveFile();
-            f.open(mGoogleApiClient, DriveFile.MODE_WRITE_ONLY, null).setResultCallback(
-                    (new ResultCallback<DriveApi.DriveContentsResult>() {
-                        @Override
-                        public void onResult(DriveApi.DriveContentsResult result) {
-                            Log.e(TAG, "********* on REsult");
-                            if (!result.getStatus().isSuccess()) {
-                                Log.e(TAG, "##### timeout");
-                                // Handle error
-                                return;
-                            }
-                            DriveContents contents = result.getDriveContents();
-                            OutputStream outputStream = contents.getOutputStream();
-                            try {
-                                outputStream.write(data);
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                            MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
-                                    .setLastViewedByMeDate(new Date()).build();
-                            contents.commit(mGoogleApiClient, changeSet).setResultCallback(new ResultCallback<Status>() {
-                                @Override
-                                public void onResult(Status result) {
-                                    // Handle the response status
-                                }
-                            });
-
-                        }
-                    }), 5, TimeUnit.SECONDS
-            );
+            DriveApi.DriveContentsResult dcr = f.open(mGoogleApiClient, DriveFile.MODE_WRITE_ONLY, null).await();
+            Log.e(TAG, "********* on REsult");
+            if (!dcr.getStatus().isSuccess()) {
+                Log.e(TAG, "##### timeout");
+                // Handle error
+                return;
+            }
+            DriveContents contents = dcr.getDriveContents();
+            OutputStream outputStream = contents.getOutputStream();
+            try {
+                outputStream.write(data);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
+                    .setLastViewedByMeDate(new Date()).build();
+            Status st = contents.commit(mGoogleApiClient, changeSet).await();
         } else {
-            // no file yet
+            DriveApi.DriveContentsResult dcr = Drive.DriveApi.newDriveContents(mGoogleApiClient).await();
+            if (!dcr.getStatus().isSuccess()) {
+                Log.e(TAG,"Error while trying to create new file contents");
+                return;
+            }
+            final DriveContents driveContents = dcr.getDriveContents();
 
-            Drive.DriveApi.newDriveContents(mGoogleApiClient)
-                    .setResultCallback(new
-                                               ResultCallback<DriveApi.DriveContentsResult>() {
-                                                   @Override
-                                                   public void onResult(final DriveApi.DriveContentsResult result) {
-                                                       if (!result.getStatus().isSuccess()) {
-                                                           Log.e(TAG,"Error while trying to create new file contents");
-                                                           return;
-                                                       }
-                                                       final DriveContents driveContents = result.getDriveContents();
+            // write content to DriveContents
+            OutputStream outputStream = driveContents.getOutputStream();
+            try {
+                outputStream.write(data);
 
-                                                       // write content to DriveContents
-                                                       OutputStream outputStream = driveContents.getOutputStream();
-                                                       try {
-                                                           outputStream.write(data);
+            } catch (IOException e) {
+                Log.e(TAG, e.getMessage());
+            }
 
-                                                       } catch (IOException e) {
-                                                           Log.e(TAG, e.getMessage());
-                                                       }
+            MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
+                    .setTitle(name)
+                    .setMimeType("text/plain")
+                    .build();
 
-                                                       MetadataChangeSet changeSet = new MetadataChangeSet.Builder()
-                                                               .setTitle(name)
-                                                               .setMimeType("text/plain")
-                                                               .build();
-
-                                                       // create a file on root folder
-                                                       appFolder.createFile(mGoogleApiClient, changeSet, driveContents)
-                                                               .setResultCallback(new ResultCallback<DriveFolder.DriveFileResult>() {
-                                                                   @Override
-                                                                   public void onResult(@NonNull DriveFolder.DriveFileResult result) {
-                                                                       if (!result.getStatus().isSuccess()) {
-                                                                           Log.e(TAG, "Error while trying to create the file");
-                                                                           return;
-                                                                       }
-                                                                       Log.e(TAG,"Created a file with content: " + result.getDriveFile().getDriveId());
-                                                                   }
-                                                               });
-                                                   }
-
-                                               });
+            // create a file on root folder
+            DriveFolder.DriveFileResult dfr = appFolder.createFile(mGoogleApiClient, changeSet, driveContents).await();
+            if (!dfr.getStatus().isSuccess()) {
+                Log.e(TAG, "Error while trying to create the file");
+                return;
+            }
+            Log.e(TAG,"Created a file with content: " + dfr.getDriveFile().getDriveId());
         }
-
-
-
     };
-
-
-
-
-
-
-/*
-// onresume
-        if (mGoogleApiClient == null) {
-        // Create the API client and bind it to an instance variable.
-        // We use this instance as the callback for connection and connection
-        // failures.
-        // Since no account name is passed, the user is prompted to choose.
-        mGoogleApiClient = new GoogleApiClient.Builder(this)
-        .addApi(Drive.API)
-        .addScope(Drive.SCOPE_FILE)
-        .addConnectionCallbacks(this)
-        .addOnConnectionFailedListener(this)
-        .build();
-        }
-        // Connect the client. Once connected, the camera is launched.
-        mGoogleApiClient.connect();
-
-
-@Override
-protected void onPause() {
-        if (mGoogleApiClient != null) {
-        mGoogleApiClient.disconnect();
-        }
-        super.onPause();
-        }
-*/
 
     public SyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
@@ -440,7 +378,9 @@ protected void onPause() {
         Map<String, NoteModel> results = new HashMap<String, NoteModel>();
         for (String key : result.keySet()) {
             NoteModel n = getRemoteObject(key);
-            results.put(key, n);
+            if (n != null) {
+                results.put(key, n);
+            }
         }
 
         return results;
@@ -454,7 +394,6 @@ protected void onPause() {
     public void onPerformSync(Account account, Bundle extras, String authority, ContentProviderClient provider, SyncResult syncResult) {
         System.out.println("syncing ...");
 
-        // Connect the client. Once connected, the camera is launched.
         ConnectionResult result = mGoogleApiClient.blockingConnect();
         createAppBaseFolder();
 
